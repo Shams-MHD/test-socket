@@ -13,9 +13,10 @@ export class FcmController {
 
   @Post('register')
   @HttpCode(HttpStatus.OK)
-  registerDevice(@Res() res:FastifyReply,@Body() body: RegisterTokenDto) {
+  registerDevice(@Req() request:FastifyRequest,@Res() res:FastifyReply,@Body() body: RegisterTokenDto) {
 
     log('Registering token:', body.token);
+    if(!request.cookies['fcm_token'])
     res.setCookie('fcm_token', body.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -24,6 +25,31 @@ export class FcmController {
 
     this.fcmService.saveDeviceToken(body.token);
     return res.send({ message: 'Token registered successfully' })
+  }
+
+  @Post('switch-profile')
+  @HttpCode(HttpStatus.OK)
+  async moveToken(
+    @Req() request: FastifyRequest,
+    @Res() res: FastifyReply,
+    @Body() body: { targetProfileId: number,sourceProfileId:number }
+  ) {
+    const fcmToken = request.cookies['fcm_token'];
+
+    if (!fcmToken) {
+      return res.status(HttpStatus.BAD_REQUEST).send({ message: 'No FCM token found in cookies.' });
+    }
+
+    const sourceProfileId = body.sourceProfileId; // we can take it from token later
+
+    const targetProfileId = body.targetProfileId;
+
+    try {
+      await this.fcmService.switchProfile(sourceProfileId, targetProfileId, fcmToken);
+      return res.send({ message: 'Token moved successfully.' });
+    } catch (error) {
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).send({ message: error.message });
+    }
   }
 
   @Get('send-test')

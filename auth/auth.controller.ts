@@ -1,4 +1,4 @@
-import { Controller, Get, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import {FastifyReply , FastifyRequest} from "fastify";
 
@@ -7,14 +7,15 @@ import {FastifyReply , FastifyRequest} from "fastify";
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Get('sign-in')
-  async signIn(@Res() res:FastifyReply) {
+  @Post('sign-in')
+  async signIn(@Res() res:FastifyReply , @Body() data:{username:string,password:string}) {
 
-    const token = await this.authService.signUser(1, 'user');
+    
+    const token = await this.authService.signUser('user',data);
     res.setCookie('accessToken', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      maxAge: 86400000, // 24 hours in milliseconds
+      maxAge: 86400000,
     });    
     return res.send(token);
   }

@@ -1,15 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { ServiceAccount } from 'firebase-admin';
+import { PrismaService } from '../../../../prisma/prisma.service';
 
 @Injectable()
 export class FcmService {
+
   private readonly logger = new Logger(FcmService.name);
   // For this POC, we'll store the token in memory.
   // In a real app, you'd store this in a database (e.g., using Prisma) against a user ID.
   private deviceToken: string | null = null;
 
-  constructor() {
+  constructor(private readonly prisma:PrismaService) {
     this.initializeFirebaseAdmin();
   }
 
@@ -31,6 +33,37 @@ export class FcmService {
   // Method to store the token
   saveDeviceToken(token: string): void {
     this.logger.log(`Saving new device token: ${token}`);
+
+    // lets assume that the user has id=1
+    const userId = 1;
+
+    this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { fcmToken: true },
+    })
+    .then(user => {
+      if (!user) {
+        throw new Error(`User with ID ${userId} not found`);
+      }
+  
+      if (user.fcmToken.includes(token)) {
+        this.logger.log(`Token already exists for user ${userId}, skipping update.`);
+        return;
+      }
+  
+      const updatedTokens = [...user.fcmToken, token];
+  
+      return this.prisma.user.update({
+        where: { id: userId },
+        data: { fcmToken: { set: updatedTokens } },
+      });
+    })
+    .then(() => {
+      this.logger.log(`Token added successfully for user ${userId}`);
+    })
+    .catch(error => {
+      this.logger.error(`Failed to save device token for user ${userId}:`, error);
+    });
     this.deviceToken = token;
   }
 
@@ -64,28 +97,68 @@ export class FcmService {
     }
   }
 
+  async switchProfile(sourceProfileId:number, targetProfileId:number, token:string){
+
+    
+    this.logger.log(`Moving token ${token} from profile ${sourceProfileId} to profile ${targetProfileId}`);
+
+    const sourceProfile = await this.prisma.profile.findUnique({
+      where: { id: sourceProfileId },
+      select: { fcmTokens: true },
+    });
+  
+    if (!sourceProfile) {
+      throw new Error(`Source profile with ID ${sourceProfileId} not found.`);
+    }
+  
+    if (!sourceProfile.fcmTokens.includes(token)) {
+      throw new Error(`Token ${token} not found in source profile ${sourceProfileId}.`);
+    }
+  
+    const updatedSourceTokens = sourceProfile.fcmTokens.filter(t => t !== token);
+    await this.prisma.profile.update({
+      where: { id: sourceProfileId },
+      data: { fcmTokens: { set: updatedSourceTokens } },
+    });
+  
+    const targetProfile = await this.prisma.profile.findUnique({
+      where: { id: targetProfileId },
+      select: { fcmTokens: true },
+    });
+  
+    if (!targetProfile) {
+      throw new Error(`Target profile with ID ${targetProfileId} not found.`);
+    }
+  
+    // Add the token to the target profile
+    const updatedTargetTokens = [...targetProfile.fcmTokens, token];
+    await this.prisma.profile.update({
+      where: { id: targetProfileId },
+      data: { fcmTokens: { set: updatedTargetTokens } },
+    });
+  
+    this.logger.log(`Token ${token} moved successfully from profile ${sourceProfileId} to profile ${targetProfileId}`);
+  }
+
+
   async validateToken(token: string): Promise<boolean> {
     if (!token) return false;
 
     try {
-      // The `dryRun: true` flag is the key.
-      // Firebase checks the token's validity without sending a message.
       await admin.messaging().send({ token }, true);
       this.logger.log(`Token ${token} is valid.`);
       return true;
     } catch (error) {
-      // The Admin SDK throws specific error codes for invalid tokens.
       if (
         error.code === 'messaging/invalid-registration-token' ||
         error.code === 'messaging/registration-token-not-registered'
       ) {
         this.logger.warn(`Token ${token} is invalid. It should be deleted.`);
-        // This is where you trigger cleanup.
-        // await this.deleteDeviceByToken(token);
+       
         return false;
       }
       this.logger.error('Unexpected error validating FCM token', error);
-      return false; // Treat other errors as temporary failures
+      return false; 
     }
 
   }

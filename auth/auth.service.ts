@@ -1,18 +1,27 @@
 import { JwtService } from '@nestjs/jwt';
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../../prisma/prisma.service';
 
 @Injectable()
 export class AuthService {
-  constructor(private jwtService: JwtService) {}
+  constructor(private jwtService: JwtService,
+    private readonly prisma:PrismaService
+  ) {}
 
-  async signUp(user: { username: string; password: string; id: number }) {
-    return await this.signUser(user.id, 'user');
+
+  async createProfile(user:{id:number,name:string}){
+    return await this.prisma.profile.create({data:{name:user.name,userId:user.id,avatar:''}});
   }
 
-  async signUser(userId: number, roleName: string) {
+
+
+  async signUser(roleName: string , user: { username: string; password: string}) {
+
+    const newUser = await this.prisma.user.create({data:{username:user.username,password:user.password}})
+
     const accessToken = await this.jwtService.signAsync(
       {
-        id: userId,
+        id: newUser.id,
         role: roleName,
       },
       {
@@ -20,6 +29,11 @@ export class AuthService {
         expiresIn: 86400, // 60 * 60 * 24 : 24 hours
       },
     );
+
+    // create two profiles 
+    await this.prisma.profile.create({data:{name:user.username,userId:newUser.id,avatar:''}});
+    await this.prisma.profile.create({data:{name:user.username,userId:newUser.id,avatar:''}});
+  
 
     return accessToken;
   }
