@@ -22,9 +22,22 @@ export class WsJwtGuard implements CanActivate {
   }
 
   static validateToken(client: Socket) {
-    const { authorization } = client.handshake.headers;
-    Logger.log({ authorization });
-    const token: string = authorization.split(' ')[1];
+    const cookies = client.handshake.headers.cookie;
+    
+    if (!cookies) {
+      throw new UnauthorizedException('No cookies found');
+    }
+    
+    const cookieArray = cookies.split(';');
+    const accessTokenCookie = cookieArray.find(cookie => 
+      cookie.trim().startsWith('accessToken=')
+    )
+    
+    if (!accessTokenCookie) {
+      throw new UnauthorizedException('Access token not found in cookies');
+    }
+    
+    const token = accessTokenCookie.split('=')[1];
     const payload = verify(token, 'jwt');
     return payload;
   }

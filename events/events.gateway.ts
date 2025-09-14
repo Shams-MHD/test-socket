@@ -35,6 +35,7 @@ export class EventsGateway
 
   @SubscribeMessage('message')
   handleMessage(client: any, payload: any): string {
+    this.wss.to(client.id).emit('testEvent','message recived !!')
     return 'Hello world!';
   }
 
